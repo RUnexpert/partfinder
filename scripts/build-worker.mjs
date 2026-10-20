@@ -1,0 +1,16 @@
+import fs from 'node:fs/promises';
+let html = await fs.readFile('dist/index.html', 'utf8');
+const js = html.match(/<script[^>]+src="([^"]+)"[^>]*><\/script>/);
+const css = html.match(/<link[^>]+href="([^"]+\.css)"[^>]*>/);
+if (!js || !css) throw new Error('Ожидались JS- и CSS-файлы Vite.');
+const script = await fs.readFile(`dist${js[1]}`, 'utf8');
+const style = await fs.readFile(`dist${css[1]}`, 'utf8');
+html = html.replace(js[0], () => `<script type="module">${script.replaceAll('</script', '<\\/script')}</script>`).replace(css[0], () => `<style>${style}</style>`);
+const api = await fs.readFile('worker/api.js', 'utf8');
+await fs.mkdir('dist/server', { recursive: true });
+await fs.mkdir('dist/.openai', { recursive: true });
+await fs.writeFile('dist/server/index.js', `${api}\nconst html = ${JSON.stringify(html)};\nexport default { async fetch(request, env) { const path = new URL(request.url).pathname; if (path.startsWith('/api/')) return handleAPI(request, env); if (path !== '/' && path !== '/index.html') return new Response('Not found', {status:404}); return new Response(html, {headers:{'Content-Type':'text/html; charset=utf-8', 'X-Content-Type-Options':'nosniff', 'Referrer-Policy':'no-referrer'}}); } };\n`);
+await fs.copyFile('.openai/hosting.json', 'dist/.openai/hosting.json');
+await fs.rm('dist/assets', { recursive: true });
+await fs.rm('dist/index.html');
+console.log('Built React client and API proxy in dist/server/index.js');
